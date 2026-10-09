@@ -1,6 +1,7 @@
 using STranslate.Plugin.Translate.Claude.View;
 using STranslate.Plugin.Translate.Claude.ViewModel;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using System.Windows.Controls;
 
 namespace STranslate.Plugin.Translate.Claude;
@@ -140,16 +141,16 @@ public class Main : LlmTranslatePluginBase
                 .Replace("$content", request.Text)
                 );
 
-        // 温度限定
-        var temperature = Math.Clamp(Settings.Temperature, 0, 2);
         var content = new Dictionary<string, object>
         {
             ["model"] = model,
             ["messages"] = messages,
-            ["temperature"] = temperature,
             ["max_tokens"] = 1024,
             ["stream"] = true
         };
+        // 温度限定
+        if (SupportsTemperature(model))
+            content["temperature"] = Math.Clamp(Settings.Temperature, 0, 2);
 
         //https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/system-prompts#how-to-give-claude-a-role
         var systemMsg = messages.FirstOrDefault(x => x.Role.Equals("system", StringComparison.InvariantCultureIgnoreCase));
@@ -197,4 +198,12 @@ public class Main : LlmTranslatePluginBase
             }
         }, option, cancellationToken: cancellationToken);
     }
+
+    // Claude 3.x and 4.0-4.6 accept `temperature`; Opus 4.7+ and the 5.x family
+    // reject it with a 400, so any model outside this pattern is sent without it.
+    private static readonly Regex TemperatureModelPattern = new(
+        @"^claude-(?:3[-.]|(?:opus|sonnet|haiku)-4(?:-[0-6])?(?:-\d{8})?$)",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    internal static bool SupportsTemperature(string model) => TemperatureModelPattern.IsMatch(model);
 }
